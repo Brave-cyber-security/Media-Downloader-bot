@@ -226,20 +226,28 @@ async def ask_confirmation(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "confirm_payment")
 async def confirm_payment(callback: CallbackQuery):
     user_id = callback.from_user.id
-    user = await get_user_by_tg_id(user_id)
-    sub_price = await get_premium_price()
-
-    if user.balance >= sub_price:
-        try:
-            await remove_user_balance(user_id, sub_price)
-            await update_user_premium_time(user_id)
-            return await callback.message.answer(_("subscription_activated"))
-        except ValueError:
-            return await callback.message.answer(_("insufficient_balance"))
-    else:
-        await callback.message.answer(_("insufficient_balance"))
-
     await callback.answer()
+
+    user = await get_user_by_tg_id(user_id)
+    if not user:
+        await callback.message.answer(_("You are not registered in the system ❌"))
+        return
+
+    sub_price = await get_premium_price()
+    if sub_price is None or sub_price <= 0:
+        await callback.message.answer(_("Payment config is invalid. Please contact admin."))
+        return
+
+    if user.balance < sub_price:
+        await callback.message.answer(_("insufficient_balance"))
+        return
+
+    try:
+        await remove_user_balance(user_id, sub_price)
+        await update_user_premium_time(user_id)
+        await callback.message.answer(_("subscription_activated"))
+    except ValueError:
+        await callback.message.answer(_("insufficient_balance"))
     return None
 
 

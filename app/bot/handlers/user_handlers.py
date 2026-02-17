@@ -84,6 +84,8 @@ async def add_user_balance(tg_id: int, amount: float) -> User:
     async with get_general_session() as session:
         result = await session.execute(select(User).where(User.tg_id == tg_id))
         user = result.scalar_one_or_none()
+        if not user:
+            raise ValueError("User not found")
         user.balance += amount
         await session.commit()
         return user
@@ -120,6 +122,8 @@ async def remove_user_balance(tg_id: int, amount: float) -> User:
     async with get_general_session() as session:
         result = await session.execute(select(User).where(User.tg_id == tg_id))
         user = result.scalar_one_or_none()
+        if not user:
+            raise ValueError("User not found")
         if user.balance >= amount:
             user.balance -= amount
             await session.commit()
