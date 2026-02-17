@@ -31,6 +31,10 @@ Required `.env` variables for local Bot API:
 - `TELEGRAM_API_ID`
 - `TELEGRAM_API_HASH`
 
+Optional `.env` variable:
+- `COOKIE_DIR` (default: `./static/cookie`)
+  - If your cookies are under `app/static/cookie`, set `COOKIE_DIR=./app/static/cookie`.
+
 Run:
 
 ```bash

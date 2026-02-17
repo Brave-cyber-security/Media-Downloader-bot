@@ -14,7 +14,7 @@ services:
     volumes:
       - ./media:/media
       - ./service:/service
-      - ./static/cookie:/app/static/cookie
+      - ${COOKIE_DIR:-./static/cookie}:/app/static/cookie
       - /dev/shm:/dev/shm
     command: ["sh", "-c", "./entrypoint.sh"]
     networks:
