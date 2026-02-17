@@ -170,3 +170,4 @@ media/*
 *.ytdl
 telegram-bot-api/*
 /*.txt
+!requirements.txt
