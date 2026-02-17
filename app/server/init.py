@@ -8,6 +8,16 @@ from app.core.extensions.utils import WORKDIR
 from app.core.databases.postgres import get_general_session
 
 
+class AsyncioNoiseFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "Unclosed client session" in msg:
+            return False
+        if "Unclosed connector" in msg:
+            return False
+        return True
+
+
 async def admin_init():
     async with get_general_session() as session:
         result = await session.execute(select(AdminRequirements))
@@ -43,6 +53,7 @@ def init():
             logging.StreamHandler(),
         ],
     )
+    logging.getLogger("asyncio").addFilter(AsyncioNoiseFilter())
 
     logger = logging.getLogger(__name__)
     logger.info("Logger is set up and running.")

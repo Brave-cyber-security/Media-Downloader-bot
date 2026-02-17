@@ -21,7 +21,8 @@ i18n = I18n(path=WORKDIR / "locales", default_locale="uz", domain="messages")
 async def main() -> None:
     if settings.USE_LOCAL_BOT_API:
         bot = Bot(token=settings.BOT_TOKEN)
-        await log_out(bot, 10)
+        if settings.FORCE_BOT_LOGOUT_ON_STARTUP:
+            await log_out(bot, 10)
         local_server = TelegramAPIServer.from_base(settings.LOCAL_BOT_API_URL)
         bot = Bot(token=settings.BOT_TOKEN, server=local_server)
     else:

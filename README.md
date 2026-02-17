@@ -34,6 +34,8 @@ Required `.env` variables for local Bot API:
 Optional `.env` variable:
 - `COOKIE_DIR` (default: `./static/cookie`)
   - If your cookies are under `app/static/cookie`, set `COOKIE_DIR=./app/static/cookie`.
+- `FORCE_BOT_LOGOUT_ON_STARTUP` (default: `false`)
+  - Keep this `false` in normal runs to avoid Telegram `Close` flood control on frequent restarts.
 
 Run:
 

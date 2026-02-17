@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     ADMINS: str = "123456"
     USE_LOCAL_BOT_API: bool = False
+    FORCE_BOT_LOGOUT_ON_STARTUP: bool = False
     LOCAL_BOT_API_URL: str = "http://telegram-bot-api:8081"
     TELEGRAM_API_ID: str | None = None
     TELEGRAM_API_HASH: str | None = None

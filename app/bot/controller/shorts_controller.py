@@ -22,6 +22,8 @@ class YouTubeShortsController:
             normalized_url = self._normalize_youtube_url(url)
             return await asyncio.to_thread(self._download_with_ytdlp, normalized_url)
         except Exception as ytdlp_error:
+            if self._is_unrecoverable_youtube_error(ytdlp_error):
+                raise ytdlp_error
             logger.warning("yt-dlp failed for Shorts, falling back to pytubefix")
             try:
                 return await asyncio.to_thread(self._download_with_pytubefix, url)
@@ -44,9 +46,20 @@ class YouTubeShortsController:
             {},
             {"extractor_args": {"youtube": {"player_client": ["web"]}}},
             {"extractor_args": {"youtube": {"player_client": ["mweb"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["tv"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
             {"extractor_args": {"youtube": {"player_client": ["android"]}}},
             {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
         ]
+
+    @staticmethod
+    def _is_unrecoverable_youtube_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return (
+            "not available on this app" in message
+            or "video is unavailable" in message
+            or "this content isn't available" in message
+        )
 
     def _download_with_ytdlp(self, url: str) -> str:
         cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
@@ -108,6 +121,8 @@ class YouTubeShortsController:
                     logger.warning(
                         f"Shorts yt-dlp attempt failed (cookie={cookie_file}, variant={variant}): {err}"
                     )
+                    if self._is_unrecoverable_youtube_error(err):
+                        raise err
 
         if last_error:
             raise last_error
