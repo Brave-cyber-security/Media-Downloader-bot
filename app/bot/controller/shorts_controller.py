@@ -55,10 +55,7 @@ class YouTubeShortsController:
             {},
             {"extractor_args": {"youtube": {"player_client": ["web"]}}},
             {"extractor_args": {"youtube": {"player_client": ["mweb"]}}},
-            {"extractor_args": {"youtube": {"player_client": ["tv"]}}},
-            {"extractor_args": {"youtube": {"player_client": ["web_creator"]}}},
             {"extractor_args": {"youtube": {"player_client": ["android"]}}},
-            {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
         ]
 
     @staticmethod
@@ -74,7 +71,7 @@ class YouTubeShortsController:
 
     def _download_with_ytdlp(self, url: str) -> str:
         cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
-        cookie_candidates: list[str | None] = cookies + [None] if cookies else [None]
+        cookie_candidates: list[str | None] = cookies if cookies else [None]
         last_error: Exception | None = None
 
         for variant in self._extractor_variants():

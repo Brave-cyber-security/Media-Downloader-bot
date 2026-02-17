@@ -4,7 +4,6 @@ import logging
 import re
 import shlex
 import tempfile
-import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -18,13 +17,14 @@ MUSIC_DIR.mkdir(parents=True, exist_ok=True)
 
 # Reduced for faster response
 MAX_RESULTS, CHUNK = 30, 10
-FFMPEG_WAV = "-vn -acodec pcm_s16le -ac 1 -ar 16000 -t 10 -f wav"
+FFMPEG_WAV = "-vn -acodec pcm_s16le -ac 1 -ar 16000 -t 7 -f wav"
 TOKEN_RE = re.compile(r"\w+")
 
 # Smaller cache for faster lookups
 _text_search_cache: Dict[str, tuple] = {}  # (results, timestamp)
 CACHE_MAX_SIZE = 30
 CACHE_TTL = 180  # 3 minutes
+_SHAZAM_CLIENT: Any | None = None
 
 
 def _new_shazam_client() -> Any:
@@ -33,16 +33,11 @@ def _new_shazam_client() -> Any:
     return Shazam()
 
 
-async def _close_shazam_client(client: Any) -> None:
-    close_method = getattr(client, "close", None)
-    if not callable(close_method):
-        return
-    try:
-        result = close_method()
-        if inspect.isawaitable(result):
-            await result
-    except Exception:
-        pass
+def _get_shazam_client() -> Any:
+    global _SHAZAM_CLIENT
+    if _SHAZAM_CLIENT is None:
+        _SHAZAM_CLIENT = _new_shazam_client()
+    return _SHAZAM_CLIENT
 
 
 def _score(hit: Dict, tokens: List[str]) -> float:
@@ -81,7 +76,7 @@ async def find_music_by_text(text: str) -> List[Dict]:
             return results
 
     try:
-        shazam = _new_shazam_client()
+        shazam = _get_shazam_client()
 
         # Parallel search with smaller chunks
         tasks = []
@@ -122,10 +117,6 @@ async def find_music_by_text(text: str) -> List[Dict]:
     except Exception as e:
         logger.error(f"Shazam error: {e}")
         return []
-    finally:
-        if "shazam" in locals():
-            await _close_shazam_client(shazam)
-
 
 async def recognise_music_from_audio(src_path: str) -> List[Dict]:
     """Faster audio recognition."""
@@ -134,7 +125,7 @@ async def recognise_music_from_audio(src_path: str) -> List[Dict]:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_wav = Path(temp_dir) / f"{uuid4()}.wav"
-        shazam = _new_shazam_client()
+        shazam = _get_shazam_client()
 
         try:
             # Faster ffmpeg conversion
@@ -156,7 +147,7 @@ async def recognise_music_from_audio(src_path: str) -> List[Dict]:
 
             # Faster recognition timeout
             recognition_result = await asyncio.wait_for(
-                shazam.recognize(str(temp_wav)), timeout=20
+                shazam.recognize(str(temp_wav)), timeout=12
             )
 
             if not recognition_result:
@@ -179,8 +170,6 @@ async def recognise_music_from_audio(src_path: str) -> List[Dict]:
         except Exception as e:
             logger.error(f"Recognition error: {e}")
             return []
-        finally:
-            await _close_shazam_client(shazam)
 
 
 async def download_music(url: str, filename: Optional[str] = None) -> Optional[str]:
