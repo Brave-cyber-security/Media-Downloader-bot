@@ -192,6 +192,57 @@ def _video_sync(video_id: str, title: str) -> Optional[str]:
     return None
 
 
+def _video_sync_with_quality(video_id: str, title: str, quality: int) -> Optional[str]:
+    cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
+    cookie_candidates: list[str | None] = cookies if cookies else [None]
+    safe_title = "".join(c for c in title if c.isalnum() or c in " -_")[:40] or video_id
+    quality = min(1080, max(480, int(quality)))
+
+    format_candidates = [
+        f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best",
+        f"bv*[height<={quality}]+ba/b[height<={quality}]/b",
+        f"best[height<={quality}]/best",
+        "best",
+    ]
+
+    for cookie_file in cookie_candidates:
+        for format_selector in format_candidates:
+            opts = VIDEO_OPTS.copy()
+            opts["format"] = format_selector
+            if cookie_file:
+                opts["cookiefile"] = cookie_file
+            else:
+                opts.pop("cookiefile", None)
+
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    url = f"https://youtube.com/watch?v={video_id}"
+                    ydl.download([url])
+
+                    base_patterns = [
+                        f"{safe_title}-{video_id}",
+                        f"*{video_id}*",
+                        f"{safe_title}*",
+                    ]
+
+                    for pattern in base_patterns:
+                        for ext in ("mp4", "webm", "mkv", "avi"):
+                            for file_path in MUSIC_DIR.glob(f"{pattern}.{ext}"):
+                                if file_path.exists() and file_path.stat().st_size > 1000:
+                                    return str(file_path)
+            except Exception as e:
+                error_text = str(e).lower()
+                if "requested format is not available" in error_text:
+                    continue
+                logger.warning(
+                    f"Video download failed (video_id={video_id}, q={quality}, cookie={cookie_file}, format={format_selector}): {e}"
+                )
+                continue
+
+    logger.error(f"All video quality attempts failed for video: {video_id}, q={quality}")
+    return None
+
+
 async def download_music_from_youtube(title: str, artist: str) -> str | None:
     """Audio download using yt-dlp + cookies, pytubefix fallback."""
     if not title or not artist:
@@ -237,6 +288,26 @@ async def download_video_from_youtube(video_id: str, title: str) -> Optional[str
         return None
     except Exception as e:
         logger.error(f"Video error: {e}")
+        return None
+
+
+async def download_video_from_youtube_with_quality(
+    video_id: str, title: str, quality: int
+) -> Optional[str]:
+    if not video_id or not title:
+        return None
+
+    loop = asyncio.get_running_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(_pool, _video_sync_with_quality, video_id, title, quality),
+            timeout=90,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Video timeout (quality={quality}): {video_id}")
+        return None
+    except Exception as e:
+        logger.error(f"Video quality error (quality={quality}): {e}")
         return None
 
 

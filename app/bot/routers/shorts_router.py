@@ -2,15 +2,18 @@ import asyncio
 import logging
 import re
 import time
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.i18n import gettext as _
 
 from app.bot.controller.shorts_controller import YouTubeShortsController
 from app.bot.extensions.clear import atomic_clear
 from app.bot.handlers.statistics_handler import update_statistics
 from app.bot.handlers.user_handlers import remove_token
+from app.bot.handlers.youtube_handler import download_video_from_youtube_with_quality
 from app.bot.keyboards.general_buttons import get_music_download_button
 from app.bot.keyboards.payment_keyboard import get_payment_keyboard
 from app.bot.routers.music_router import (
@@ -27,11 +30,11 @@ shorts_router = Router()
 logger = logging.getLogger(__name__)
 
 
-def extract_shorts_url(text: str) -> str:
-    """Extract YouTube Shorts URL from text."""
+def extract_youtube_url(text: str) -> str:
     patterns = [
         r"https?://(?:www\.)?youtube\.com/shorts/[^\s]+",
-        r"https?://youtu\.be/[^\s]+",
+        r"https?://(?:www\.)?youtube\.com/watch\?[^\s]+",
+        r"https?://(?:www\.)?youtu\.be/[^\s]+",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -40,10 +43,50 @@ def extract_shorts_url(text: str) -> str:
     return ""
 
 
+def extract_youtube_video_id(url: str) -> str | None:
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().replace("www.", "")
+
+        if host == "youtu.be":
+            video_id = parsed.path.strip("/").split("/")[0]
+        elif "youtube.com" in host:
+            if parsed.path.startswith("/shorts/"):
+                video_id = parsed.path.split("/shorts/")[-1].split("/")[0]
+            else:
+                video_id = parse_qs(parsed.query).get("v", [None])[0]
+        else:
+            return None
+
+        if video_id and re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+            return video_id
+        return None
+    except Exception:
+        return None
+
+
+def is_shorts_url(url: str) -> bool:
+    return "youtube.com/shorts/" in url.lower()
+
+
+def get_youtube_quality_keyboard(video_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="480p", callback_data=f"ytq:{video_id}:480"),
+                InlineKeyboardButton(text="720p", callback_data=f"ytq:{video_id}:720"),
+                InlineKeyboardButton(text="1080p", callback_data=f"ytq:{video_id}:1080"),
+            ]
+        ]
+    )
+
+
 @shorts_router.message(
-    F.text.contains("youtube.com/shorts") | F.text.contains("youtu.be")
+    F.text.contains("youtube.com/shorts")
+    | F.text.contains("youtube.com/watch")
+    | F.text.contains("youtu.be")
 )
-async def handle_shorts_link(message: Message):
+async def handle_youtube_link(message: Message):
     res = await remove_token(message)
     if not res:
         await message.answer(
@@ -52,9 +95,21 @@ async def handle_shorts_link(message: Message):
         )
         return
 
-    url = extract_shorts_url(message.text)
+    url = extract_youtube_url(message.text or "")
     if not url:
         await message.answer(_("invalid_url"))
+        return
+
+    video_id = extract_youtube_video_id(url)
+    if not video_id:
+        await message.answer(_("invalid_url"))
+        return
+
+    if not is_shorts_url(url):
+        await message.answer(
+            "YouTube video aniqlandi. Sifatni tanlang (480-1080p):",
+            reply_markup=get_youtube_quality_keyboard(video_id),
+        )
         return
 
     progress_message = await message.answer(_("shorts_loading"))
@@ -104,6 +159,47 @@ async def handle_shorts_link(message: Message):
             await progress_message.delete()
         except Exception:
             pass
+
+
+@shorts_router.callback_query(F.data.startswith("ytq:"))
+async def handle_youtube_quality_choice(callback_query: CallbackQuery):
+    await callback_query.answer()
+
+    try:
+        _, video_id, quality_text = callback_query.data.split(":", maxsplit=2)
+        quality = int(quality_text)
+    except Exception:
+        await callback_query.message.answer("Noto'g'ri format tanlandi.")
+        return
+
+    quality = min(1080, max(480, quality))
+    status = await callback_query.message.answer(
+        f"YouTube video yuklanmoqda ({quality}p)..."
+    )
+
+    try:
+        file_path = await download_video_from_youtube_with_quality(
+            video_id=video_id,
+            title=f"youtube_{video_id}",
+            quality=quality,
+        )
+
+        if not file_path or not Path(file_path).exists() or Path(file_path).stat().st_size <= 1000:
+            await status.edit_text("Video yuklab bo'lmadi. Boshqa sifatni sinab ko'ring.")
+            return
+
+        await callback_query.message.answer_video(
+            FSInputFile(file_path),
+            caption=f"YouTube video tayyor ({quality}p)",
+            supports_streaming=True,
+        )
+        await update_statistics(callback_query.from_user.id, field="from_youtube")
+
+        await atomic_clear(file_path)
+        await status.delete()
+    except Exception as e:
+        logger.exception("YouTube quality download error")
+        await status.edit_text(f"Video yuklashda xatolik: {str(e)[:120]}")
 
 
 @shorts_router.callback_query(F.data == "shorts:download_music")
