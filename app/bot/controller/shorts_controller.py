@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import re
+import subprocess
 from pathlib import Path
 from pytubefix import YouTube
 import yt_dlp
@@ -87,7 +88,7 @@ class YouTubeShortsController:
 
                         for candidate in candidates:
                             if candidate.exists() and candidate.stat().st_size > 1024:
-                                return str(candidate)
+                                return str(self._prepare_telegram_video(candidate))
 
                         if video_id:
                             for candidate in sorted(
@@ -99,7 +100,7 @@ class YouTubeShortsController:
                                     candidate.exists()
                                     and candidate.stat().st_size > 1024
                                 ):
-                                    return str(candidate)
+                                    return str(self._prepare_telegram_video(candidate))
 
                         raise ValueError("Downloaded shorts file not found")
                 except Exception as err:
@@ -137,9 +138,97 @@ class YouTubeShortsController:
         filepath = self.save_dir / filename
 
         if filepath.exists() and filepath.stat().st_size > 1024:
-            return str(filepath)
+            if not self._has_valid_duration(filepath):
+                try:
+                    filepath.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            else:
+                return str(self._prepare_telegram_video(filepath))
 
         stream.download(output_path=str(self.save_dir), filename=filename)
         if not filepath.exists() or filepath.stat().st_size <= 1024:
             raise ValueError("Downloaded shorts file is invalid")
-        return str(filepath)
+        return str(self._prepare_telegram_video(filepath))
+
+    @staticmethod
+    def _has_valid_duration(video_path: Path) -> bool:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(video_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                return False
+            duration = float((result.stdout or "0").strip() or "0")
+            return duration > 0.1
+        except Exception:
+            return False
+
+    def _prepare_telegram_video(self, source_path: Path) -> Path:
+        if source_path.suffix.lower() == ".mp4" and source_path.stem.endswith("_tg"):
+            if self._has_valid_duration(source_path):
+                return source_path
+
+        if not self._has_valid_duration(source_path):
+            raise ValueError("Downloaded shorts file has invalid duration")
+
+        target_path = source_path.with_name(f"{source_path.stem}_tg.mp4")
+        if target_path.exists() and target_path.stat().st_size > 1024:
+            if self._has_valid_duration(target_path):
+                return target_path
+
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(source_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            str(target_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+        if (
+            result.returncode == 0
+            and target_path.exists()
+            and target_path.stat().st_size > 1024
+            and self._has_valid_duration(target_path)
+        ):
+            return target_path
+
+        # Fallback to source if conversion is not needed and source is still valid
+        if self._has_valid_duration(source_path):
+            return source_path
+
+        raise ValueError("Telegram-friendly Shorts video yaratib bo'lmadi")

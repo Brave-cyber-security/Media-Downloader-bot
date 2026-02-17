@@ -6,10 +6,9 @@ import shlex
 import tempfile
 import inspect
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 import aiohttp
-from shazamio import Shazam
 from app.core.extensions.utils import WORKDIR
 
 logger = logging.getLogger(__name__)
@@ -28,7 +27,13 @@ CACHE_MAX_SIZE = 30
 CACHE_TTL = 180  # 3 minutes
 
 
-async def _close_shazam_client(client: Shazam) -> None:
+def _new_shazam_client() -> Any:
+    from shazamio import Shazam
+
+    return Shazam()
+
+
+async def _close_shazam_client(client: Any) -> None:
     close_method = getattr(client, "close", None)
     if not callable(close_method):
         return
@@ -76,7 +81,7 @@ async def find_music_by_text(text: str) -> List[Dict]:
             return results
 
     try:
-        shazam = Shazam()
+        shazam = _new_shazam_client()
 
         # Parallel search with smaller chunks
         tasks = []
@@ -129,7 +134,7 @@ async def recognise_music_from_audio(src_path: str) -> List[Dict]:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_wav = Path(temp_dir) / f"{uuid4()}.wav"
-        shazam = Shazam()
+        shazam = _new_shazam_client()
 
         try:
             # Faster ffmpeg conversion

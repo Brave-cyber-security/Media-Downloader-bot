@@ -58,7 +58,7 @@ async def handle_shorts_link(message: Message):
         await message.answer(_("invalid_url"))
         return
 
-    await message.answer(_("shorts_loading"))
+    progress_message = await message.answer(_("shorts_loading"))
 
     user_id = message.from_user.id
     user_sessions[user_id] = {"url": url}
@@ -76,13 +76,31 @@ async def handle_shorts_link(message: Message):
             FSInputFile(video_path),
             caption=_("shorts_video_ready"),
             reply_markup=get_music_download_button("shorts"),
+            supports_streaming=True,
         )
 
         await update_statistics(user_id, field="from_shorts")
 
     except Exception as e:
         logger.exception("Shorts download error")
-        await message.answer(_("shorts_error") + f"\n{e}")
+        error_text = str(e).lower()
+        if (
+            "not available on this app" in error_text
+            or "botdetection" in error_text
+            or "sign in to confirm" in error_text
+            or "requested format is not available" in error_text
+        ):
+            await message.answer(
+                "❌ Bu YouTube Shorts hozir yuklab bo‘lmadi (YouTube cheklovi). "
+                "Boshqa shorts link yuboring yoki YouTube cookies ni yangilang."
+            )
+        else:
+            await message.answer(_("shorts_error"))
+    finally:
+        try:
+            await progress_message.delete()
+        except Exception:
+            pass
 
 
 @shorts_router.callback_query(F.data == "shorts:download_music")
