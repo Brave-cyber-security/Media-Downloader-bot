@@ -61,6 +61,17 @@ class YouTubeShortsController:
             {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
         ]
 
+    @staticmethod
+    def _format_candidates() -> list[str]:
+        # YouTube format availability changes frequently; try from strict to generic.
+        return [
+            "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            "bv*[height<=1080]+ba/b[height<=1080]/b",
+            "bestvideo+bestaudio/best",
+            "bv*+ba/b",
+            "best",
+        ]
+
     def _download_with_ytdlp(self, url: str) -> str:
         cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
         cookie_candidates: list[str | None] = cookies + [None] if cookies else [None]
@@ -68,60 +79,64 @@ class YouTubeShortsController:
 
         for variant in self._extractor_variants():
             for cookie_file in cookie_candidates:
-                ydl_opts = {
-                    "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                    "outtmpl": str(self.save_dir / "%(id)s.%(ext)s"),
-                    "merge_output_format": "mp4",
-                    "noplaylist": True,
-                    "quiet": True,
-                    "no_warnings": True,
-                    "logger": _YtDlpSilentLogger(),
-                    "retries": 3,
-                    "fragment_retries": 3,
-                    "socket_timeout": 20,
-                    "geo_bypass": True,
-                }
-                ydl_opts.update(variant)
-                if cookie_file:
-                    ydl_opts["cookiefile"] = cookie_file
+                for format_selector in self._format_candidates():
+                    ydl_opts = {
+                        "format": format_selector,
+                        "outtmpl": str(self.save_dir / "%(id)s.%(ext)s"),
+                        "merge_output_format": "mp4",
+                        "noplaylist": True,
+                        "quiet": True,
+                        "no_warnings": True,
+                        "logger": _YtDlpSilentLogger(),
+                        "retries": 3,
+                        "fragment_retries": 3,
+                        "socket_timeout": 20,
+                        "geo_bypass": True,
+                    }
+                    ydl_opts.update(variant)
+                    if cookie_file:
+                        ydl_opts["cookiefile"] = cookie_file
 
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(url, download=True)
-                        if not info:
-                            raise ValueError("yt-dlp video ma'lumotlarini topa olmadi")
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = ydl.extract_info(url, download=True)
+                            if not info:
+                                raise ValueError("yt-dlp video ma'lumotlarini topa olmadi")
 
-                        video_id = info.get("id")
-                        prepared = Path(ydl.prepare_filename(info))
-                        candidates = [prepared, prepared.with_suffix(".mp4")]
-                        if video_id:
-                            candidates.extend(
-                                self.save_dir / f"{video_id}.{ext}"
-                                for ext in ("mp4", "webm", "mkv", "mov")
-                            )
+                            video_id = info.get("id")
+                            prepared = Path(ydl.prepare_filename(info))
+                            candidates = [prepared, prepared.with_suffix(".mp4")]
+                            if video_id:
+                                candidates.extend(
+                                    self.save_dir / f"{video_id}.{ext}"
+                                    for ext in ("mp4", "webm", "mkv", "mov")
+                                )
 
-                        for candidate in candidates:
-                            if candidate.exists() and candidate.stat().st_size > 1024:
-                                return str(self._prepare_telegram_video(candidate))
-
-                        if video_id:
-                            for candidate in sorted(
-                                self.save_dir.glob(f"{video_id}.*"),
-                                key=lambda p: p.stat().st_mtime,
-                                reverse=True,
-                            ):
-                                if (
-                                    candidate.exists()
-                                    and candidate.stat().st_size > 1024
-                                ):
+                            for candidate in candidates:
+                                if candidate.exists() and candidate.stat().st_size > 1024:
                                     return str(self._prepare_telegram_video(candidate))
 
-                        raise ValueError("Downloaded shorts file not found")
-                except Exception as err:
-                    last_error = err
-                    logger.warning(
-                        f"Shorts yt-dlp attempt failed (cookie={cookie_file}, variant={variant}): {err}"
-                    )
+                            if video_id:
+                                for candidate in sorted(
+                                    self.save_dir.glob(f"{video_id}.*"),
+                                    key=lambda p: p.stat().st_mtime,
+                                    reverse=True,
+                                ):
+                                    if (
+                                        candidate.exists()
+                                        and candidate.stat().st_size > 1024
+                                    ):
+                                        return str(self._prepare_telegram_video(candidate))
+
+                            raise ValueError("Downloaded shorts file not found")
+                    except Exception as err:
+                        last_error = err
+                        error_text = str(err).lower()
+                        if "requested format is not available" in error_text:
+                            continue
+                        logger.warning(
+                            f"Shorts yt-dlp attempt failed (cookie={cookie_file}, variant={variant}, format={format_selector}): {err}"
+                        )
 
         if last_error:
             raise last_error
