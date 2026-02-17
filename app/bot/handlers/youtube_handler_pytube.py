@@ -1,4 +1,4 @@
-from pytubefix import Search
+from pytubefix import Search, YouTube
 from pathlib import Path
 import os
 import logging
@@ -25,31 +25,41 @@ def download_audio_with_pytube(query: str) -> str | None:
 
         video_url = videos[0].watch_url
         video_id = videos[0].video_id
-        yt = YouTube(video_url, client='WEB')
-        stream = yt.streams.filter(only_audio=True).order_by("abr").desc().first()
 
-        if not stream:
-            logger.warning(f"No audio stream found for query: {query}")
-            return None
+        # Try WEB with PoToken first, then ANDROID fallback
+        clients_to_try = [
+            {"client": "WEB", "use_po_token": True},
+            {"client": "ANDROID"},
+            {"client": "IOS"},
+        ]
 
-        title = sanitize_filename(yt.title)
-        file_name = f"{title[:50]}-{video_id}.mp4"
-        out_path = MUSIC_DIR / file_name
+        for client_opts in clients_to_try:
+            try:
+                yt = YouTube(video_url, **client_opts)
+                stream = yt.streams.filter(only_audio=True).order_by("abr").desc().first()
 
-        if out_path.exists() and out_path.stat().st_size > 1024:
-            logger.info(f"File already exists: {out_path.name}")
-            return str(out_path)
+                if not stream:
+                    continue
 
-        stream.download(output_path=str(MUSIC_DIR), filename=out_path.name)
+                title = sanitize_filename(yt.title)
+                file_name = f"{title[:50]}-{video_id}.mp4"
+                out_path = MUSIC_DIR / file_name
 
-        if out_path.exists() and out_path.stat().st_size > 1024:
-            logger.info(f"Downloaded audio: {out_path.name}")
-            return str(out_path)
-        else:
-            logger.warning(
-                f"Downloaded file is too small or not found: {out_path.name}"
-            )
-            return None
+                if out_path.exists() and out_path.stat().st_size > 1024:
+                    logger.info(f"File already exists: {out_path.name}")
+                    return str(out_path)
+
+                stream.download(output_path=str(MUSIC_DIR), filename=out_path.name)
+
+                if out_path.exists() and out_path.stat().st_size > 1024:
+                    logger.info(f"Downloaded audio: {out_path.name}")
+                    return str(out_path)
+            except Exception as e:
+                logger.warning(f"pytubefix {client_opts} failed for '{query}': {e}")
+                continue
+
+        logger.error(f"All pytubefix clients failed for '{query}'")
+        return None
 
     except Exception as e:
         logger.error(f"pytubefix download error for '{query}': {e}")

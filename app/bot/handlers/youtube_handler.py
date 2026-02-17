@@ -48,7 +48,6 @@ AUDIO_OPTS_BASE = {
     "logger": _YtDlpSilentLogger(),
     "prefer_free_formats": True,
     "extractor_args": {"youtube": {"player_client": ["web", "mweb"]}},
-    "check_formats": None,
     "geo_bypass": True,
 }
 
@@ -65,7 +64,6 @@ VIDEO_OPTS = {
     "merge_output_format": "mp4",
     "logger": _YtDlpSilentLogger(),
     "extractor_args": {"youtube": {"player_client": ["web", "mweb"]}},
-    "check_formats": None,
     "geo_bypass": True,
 }
 
@@ -107,7 +105,8 @@ def _find_downloaded_file(base_path: Path) -> Optional[str]:
 
 def _audio_sync(query: str) -> Optional[str]:
     cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
-    cookie_candidates: list[str | None] = cookies if cookies else [None]
+    # Try without cookies first, then with cookies
+    cookie_candidates: list[str | None] = [None] + cookies
     format_candidates = [
         "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best",
         "bestaudio/best",
@@ -162,7 +161,8 @@ def _audio_sync(query: str) -> Optional[str]:
 
 def _video_sync(video_id: str, title: str) -> Optional[str]:
     cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
-    cookie_candidates: list[str | None] = cookies if cookies else [None]
+    # Try without cookies first, then with cookies
+    cookie_candidates: list[str | None] = [None] + cookies
 
     safe_title = "".join(c for c in title if c.isalnum() or c in " -_")[:40]
 
@@ -209,7 +209,8 @@ def _video_sync(video_id: str, title: str) -> Optional[str]:
 
 def _video_sync_with_quality(video_id: str, title: str, quality: int) -> Optional[str]:
     cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
-    cookie_candidates: list[str | None] = cookies if cookies else [None]
+    # Try without cookies first, then with cookies
+    cookie_candidates: list[str | None] = [None] + cookies
     safe_title = "".join(c for c in title if c.isalnum() or c in " -_")[:40] or video_id
     quality = min(1080, max(480, int(quality)))
 

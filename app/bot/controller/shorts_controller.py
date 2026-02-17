@@ -72,7 +72,8 @@ class YouTubeShortsController:
 
     def _download_with_ytdlp(self, url: str) -> str:
         cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
-        cookie_candidates: list[str | None] = cookies if cookies else [None]
+        # Try WITHOUT cookies first (often works better), then with cookies
+        cookie_candidates: list[str | None] = [None] + cookies
         last_error: Exception | None = None
 
         for variant in self._extractor_variants():
@@ -90,7 +91,6 @@ class YouTubeShortsController:
                         "fragment_retries": 3,
                         "socket_timeout": 20,
                         "geo_bypass": True,
-                        "check_formats": None,
                     }
                     ydl_opts.update(variant)
                     if cookie_file:
@@ -142,42 +142,53 @@ class YouTubeShortsController:
         raise ValueError("YouTube Shorts yuklab olishda noma'lum xatolik")
 
     def _download_with_pytubefix(self, url: str) -> str:
-        yt = YouTube(url, client='WEB')
+        # Try WEB client with PoToken first, then ANDROID fallback
+        clients_to_try = [
+            {"client": "WEB", "use_po_token": True},
+            {"client": "ANDROID"},
+            {"client": "IOS"},
+        ]
+        last_err = None
+        for client_opts in clients_to_try:
+            try:
+                yt = YouTube(url, **client_opts)
+                stream = (
+                    yt.streams.filter(progressive=True, file_extension="mp4")
+                    .order_by("resolution")
+                    .desc()
+                    .first()
+                )
+                if not stream:
+                    stream = (
+                        yt.streams.filter(adaptive=True, file_extension="mp4", only_video=True)
+                        .order_by("resolution")
+                        .desc()
+                        .first()
+                    )
+                if not stream:
+                    continue
 
-        stream = (
-            yt.streams.filter(progressive=True, file_extension="mp4")
-            .order_by("resolution")
-            .desc()
-            .first()
-        )
+                filename = f"{yt.video_id}.mp4"
+                filepath = self.save_dir / filename
 
-        if not stream:
-            stream = (
-                yt.streams.filter(adaptive=True, file_extension="mp4", only_video=True)
-                .order_by("resolution")
-                .desc()
-                .first()
-            )
+                if filepath.exists() and filepath.stat().st_size > 1024:
+                    if not self._has_valid_duration(filepath):
+                        try:
+                            filepath.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    else:
+                        return str(self._prepare_telegram_video(filepath))
 
-        if not stream:
-            raise ValueError("Yuklab olinadigan video topilmadi")
+                stream.download(output_path=str(self.save_dir), filename=filename)
+                if filepath.exists() and filepath.stat().st_size > 1024:
+                    return str(self._prepare_telegram_video(filepath))
+            except Exception as e:
+                last_err = e
+                logger.warning(f"pytubefix {client_opts} failed: {e}")
+                continue
 
-        filename = f"{yt.video_id}.mp4"
-        filepath = self.save_dir / filename
-
-        if filepath.exists() and filepath.stat().st_size > 1024:
-            if not self._has_valid_duration(filepath):
-                try:
-                    filepath.unlink(missing_ok=True)
-                except Exception:
-                    pass
-            else:
-                return str(self._prepare_telegram_video(filepath))
-
-        stream.download(output_path=str(self.save_dir), filename=filename)
-        if not filepath.exists() or filepath.stat().st_size <= 1024:
-            raise ValueError("Downloaded shorts file is invalid")
-        return str(self._prepare_telegram_video(filepath))
+        raise last_err or ValueError("Yuklab olinadigan video topilmadi")
 
     @staticmethod
     def _has_valid_duration(video_path: Path) -> bool:

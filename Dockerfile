@@ -14,7 +14,10 @@ RUN apt-get update && apt-get install -y \
     libatk-bridge2.0-0 libgtk-3-0 libgbm1 \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
-
+# ───── Node.js o'rnatish (pytubefix PoToken uchun) ─────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 # ───── Chromium va ChromeDriver o‘rnatish ─────
 RUN apt-get update && apt-get install -y chromium chromium-driver
 
