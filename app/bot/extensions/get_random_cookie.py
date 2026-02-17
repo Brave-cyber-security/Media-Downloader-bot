@@ -10,7 +10,12 @@ def get_random_cookie_for_instagram(_cookie_type: str) -> str | None:
     if _cookie_type not in COOKIE_CYCLES:
         if not cookies_path.exists():
             return None
-        items = [item for item in os.listdir(cookies_path) if item.endswith(".txt")]
+        items = [
+            item
+            for item in os.listdir(cookies_path)
+            if item.lower().endswith(".txt")
+            and (cookies_path / item).is_file()
+        ]
         if not items:
             return None
         items.sort()
@@ -27,7 +32,12 @@ def get_random_cookie_for_youtube(_cookie_type: str) -> str | None:
     if _cookie_type not in COOKIE_CYCLES_YOUTUBE:
         if not cookies_path.exists():
             return None
-        items = [item for item in os.listdir(cookies_path) if item.endswith(".txt")]
+        items = [
+            item
+            for item in os.listdir(cookies_path)
+            if item.lower().endswith(".txt")
+            and (cookies_path / item).is_file()
+        ]
         if not items:
             return None
         items.sort()
@@ -43,5 +53,5 @@ def get_all_youtube_cookies(_cookie_type: str) -> list[str]:
     return sorted(
         str(cookies_path / item)
         for item in os.listdir(cookies_path)
-        if item.endswith(".txt")
+        if item.lower().endswith(".txt") and (cookies_path / item).is_file()
     )

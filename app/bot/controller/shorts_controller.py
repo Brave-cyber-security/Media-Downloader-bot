@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import re
 from pathlib import Path
 from pytubefix import YouTube
 import yt_dlp
@@ -17,7 +18,8 @@ class YouTubeShortsController:
 
     async def download_video(self, url: str) -> str:
         try:
-            return await asyncio.to_thread(self._download_with_ytdlp, url)
+            normalized_url = self._normalize_youtube_url(url)
+            return await asyncio.to_thread(self._download_with_ytdlp, normalized_url)
         except Exception as ytdlp_error:
             logger.warning("yt-dlp failed for Shorts, falling back to pytubefix")
             try:
@@ -26,58 +28,85 @@ class YouTubeShortsController:
                 logger.exception(f"YouTube Shorts yuklab olishda xatolik: {url}")
                 raise ytdlp_error
 
+    @staticmethod
+    def _normalize_youtube_url(url: str) -> str:
+        match = re.search(
+            r"(?:youtube\.com/shorts/|youtu\.be/)([A-Za-z0-9_-]{11})", url
+        )
+        if match:
+            return f"https://www.youtube.com/watch?v={match.group(1)}"
+        return url
+
+    @staticmethod
+    def _extractor_variants() -> list[dict]:
+        return [
+            {},
+            {"extractor_args": {"youtube": {"player_client": ["web"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["mweb"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["android"]}}},
+            {"extractor_args": {"youtube": {"player_client": ["ios"]}}},
+        ]
+
     def _download_with_ytdlp(self, url: str) -> str:
         cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
-        cookie_candidates: list[str | None] = cookies if cookies else [None]
+        cookie_candidates: list[str | None] = cookies + [None] if cookies else [None]
         last_error: Exception | None = None
 
-        for cookie_file in cookie_candidates:
-            ydl_opts = {
-                "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-                "outtmpl": str(self.save_dir / "%(id)s.%(ext)s"),
-                "merge_output_format": "mp4",
-                "noplaylist": True,
-                "quiet": True,
-                "no_warnings": True,
-                "retries": 3,
-                "fragment_retries": 3,
-                "socket_timeout": 15,
-            }
-            if cookie_file:
-                ydl_opts["cookiefile"] = cookie_file
+        for variant in self._extractor_variants():
+            for cookie_file in cookie_candidates:
+                ydl_opts = {
+                    "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+                    "outtmpl": str(self.save_dir / "%(id)s.%(ext)s"),
+                    "merge_output_format": "mp4",
+                    "noplaylist": True,
+                    "quiet": True,
+                    "no_warnings": True,
+                    "retries": 3,
+                    "fragment_retries": 3,
+                    "socket_timeout": 20,
+                    "geo_bypass": True,
+                }
+                ydl_opts.update(variant)
+                if cookie_file:
+                    ydl_opts["cookiefile"] = cookie_file
 
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    if not info:
-                        raise ValueError("yt-dlp video ma'lumotlarini topa olmadi")
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        if not info:
+                            raise ValueError("yt-dlp video ma'lumotlarini topa olmadi")
 
-                    video_id = info.get("id")
-                    prepared = Path(ydl.prepare_filename(info))
-                    candidates = [prepared, prepared.with_suffix(".mp4")]
-                    if video_id:
-                        candidates.extend(
-                            self.save_dir / f"{video_id}.{ext}"
-                            for ext in ("mp4", "webm", "mkv", "mov")
-                        )
+                        video_id = info.get("id")
+                        prepared = Path(ydl.prepare_filename(info))
+                        candidates = [prepared, prepared.with_suffix(".mp4")]
+                        if video_id:
+                            candidates.extend(
+                                self.save_dir / f"{video_id}.{ext}"
+                                for ext in ("mp4", "webm", "mkv", "mov")
+                            )
 
-                    for candidate in candidates:
-                        if candidate.exists() and candidate.stat().st_size > 1024:
-                            return str(candidate)
-
-                    if video_id:
-                        for candidate in sorted(
-                            self.save_dir.glob(f"{video_id}.*"),
-                            key=lambda p: p.stat().st_mtime,
-                            reverse=True,
-                        ):
+                        for candidate in candidates:
                             if candidate.exists() and candidate.stat().st_size > 1024:
                                 return str(candidate)
 
-                    raise ValueError("Downloaded shorts file not found")
-            except Exception as err:
-                last_error = err
-                logger.warning(f"Shorts yt-dlp attempt failed (cookie={cookie_file}): {err}")
+                        if video_id:
+                            for candidate in sorted(
+                                self.save_dir.glob(f"{video_id}.*"),
+                                key=lambda p: p.stat().st_mtime,
+                                reverse=True,
+                            ):
+                                if (
+                                    candidate.exists()
+                                    and candidate.stat().st_size > 1024
+                                ):
+                                    return str(candidate)
+
+                        raise ValueError("Downloaded shorts file not found")
+                except Exception as err:
+                    last_error = err
+                    logger.warning(
+                        f"Shorts yt-dlp attempt failed (cookie={cookie_file}, variant={variant}): {err}"
+                    )
 
         if last_error:
             raise last_error

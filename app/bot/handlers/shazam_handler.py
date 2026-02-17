@@ -4,6 +4,7 @@ import logging
 import re
 import shlex
 import tempfile
+import inspect
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
@@ -13,8 +14,6 @@ from app.core.extensions.utils import WORKDIR
 
 logger = logging.getLogger(__name__)
 
-# Optimized globals
-shazam = Shazam()
 MUSIC_DIR = WORKDIR.parent / "media" / "music"
 MUSIC_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -27,6 +26,18 @@ TOKEN_RE = re.compile(r"\w+")
 _text_search_cache: Dict[str, tuple] = {}  # (results, timestamp)
 CACHE_MAX_SIZE = 30
 CACHE_TTL = 180  # 3 minutes
+
+
+async def _close_shazam_client(client: Shazam) -> None:
+    close_method = getattr(client, "close", None)
+    if not callable(close_method):
+        return
+    try:
+        result = close_method()
+        if inspect.isawaitable(result):
+            await result
+    except Exception:
+        pass
 
 
 def _score(hit: Dict, tokens: List[str]) -> float:
@@ -65,6 +76,8 @@ async def find_music_by_text(text: str) -> List[Dict]:
             return results
 
     try:
+        shazam = Shazam()
+
         # Parallel search with smaller chunks
         tasks = []
         for offset in range(0, MAX_RESULTS, CHUNK):
@@ -104,6 +117,9 @@ async def find_music_by_text(text: str) -> List[Dict]:
     except Exception as e:
         logger.error(f"Shazam error: {e}")
         return []
+    finally:
+        if "shazam" in locals():
+            await _close_shazam_client(shazam)
 
 
 async def recognise_music_from_audio(src_path: str) -> List[Dict]:
@@ -113,6 +129,7 @@ async def recognise_music_from_audio(src_path: str) -> List[Dict]:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_wav = Path(temp_dir) / f"{uuid4()}.wav"
+        shazam = Shazam()
 
         try:
             # Faster ffmpeg conversion
@@ -157,6 +174,8 @@ async def recognise_music_from_audio(src_path: str) -> List[Dict]:
         except Exception as e:
             logger.error(f"Recognition error: {e}")
             return []
+        finally:
+            await _close_shazam_client(shazam)
 
 
 async def download_music(url: str, filename: Optional[str] = None) -> Optional[str]:
