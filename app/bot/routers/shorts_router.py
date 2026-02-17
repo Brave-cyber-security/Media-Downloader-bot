@@ -1,7 +1,6 @@
 import time
 import re
 import logging
-from pathlib import Path
 
 from aiogram import Router, F
 from aiogram.types import Message, FSInputFile, CallbackQuery
@@ -22,6 +21,7 @@ from app.bot.keyboards.general_buttons import get_music_download_button
 from app.bot.handlers.statistics_handler import update_statistics
 from app.bot.extensions.clear import atomic_clear
 from app.bot.state.session_store import user_sessions  # <-- moved user_sessions here
+from app.core.extensions.utils import WORKDIR
 
 shorts_router = Router()
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ async def handle_shorts_link(message: Message):
     user_id = message.from_user.id
     user_sessions[user_id] = {"url": url}
 
-    controller = YouTubeShortsController(Path.cwd().parent / "media" / "youtube_shorts")
+    controller = YouTubeShortsController(WORKDIR.parent / "media" / "youtube_shorts")
     try:
         video_path = await controller.download_video(url)
         if not video_path:

@@ -66,7 +66,6 @@ VIDEO_OPTS = {
     "cookiefile": get_random_cookie_for_youtube(CookieType.YOUTUBE.value),
     "merge_output_format": "mp4",  # Ensure consistent output format
 }
-print("Youtube video handler: ", VIDEO_OPTS["cookiefile"])
 
 
 def _get_smart_audio_opts(
