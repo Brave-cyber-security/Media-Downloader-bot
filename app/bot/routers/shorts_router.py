@@ -81,7 +81,6 @@ async def handle_shorts_link(message: Message):
         await update_statistics(user_id, field="from_shorts")
 
     except Exception as e:
-        logger.exception("Shorts download error")
         error_text = str(e).lower()
         if (
             "not available on this app" in error_text
@@ -89,13 +88,16 @@ async def handle_shorts_link(message: Message):
             or "sign in to confirm" in error_text
             or "requested format is not available" in error_text
         ):
+            logger.warning("Shorts blocked by YouTube restrictions: %s", e)
             await message.answer(
-                "YouTube restriction: this Shorts link cannot be downloaded now. "
-                "Please send another Shorts link."
+                "YouTube cheklovi sababli bu Shorts yuklab bo'lmadi. "
+                "Iltimos, boshqa Shorts link yuboring."
             )
         elif isinstance(e, asyncio.TimeoutError):
+            logger.warning("Shorts download timeout: %s", e)
             await message.answer("Download timed out. Please try again.")
         else:
+            logger.exception("Shorts download error")
             await message.answer(_("shorts_error"))
     finally:
         try:

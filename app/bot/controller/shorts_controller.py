@@ -12,6 +12,17 @@ from app.core.extensions.enums import CookieType
 logger = logging.getLogger(__name__)
 
 
+class _YtDlpSilentLogger:
+    def debug(self, msg):
+        return
+
+    def warning(self, msg):
+        return
+
+    def error(self, msg):
+        return
+
+
 class YouTubeShortsController:
     def __init__(self, save_dir: Path):
         self.save_dir = save_dir
@@ -75,6 +86,7 @@ class YouTubeShortsController:
                     "noplaylist": True,
                     "quiet": True,
                     "no_warnings": True,
+                    "logger": _YtDlpSilentLogger(),
                     "retries": 3,
                     "fragment_retries": 3,
                     "socket_timeout": 20,
