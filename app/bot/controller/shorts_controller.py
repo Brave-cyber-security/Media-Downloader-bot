@@ -67,6 +67,7 @@ class YouTubeShortsController:
             "bestvideo+bestaudio/best",
             "bv*+ba/b",
             "best",
+            "18",
         ]
 
     def _download_with_ytdlp(self, url: str) -> str:
@@ -89,6 +90,7 @@ class YouTubeShortsController:
                         "fragment_retries": 3,
                         "socket_timeout": 20,
                         "geo_bypass": True,
+                        "check_formats": None,
                     }
                     ydl_opts.update(variant)
                     if cookie_file:
@@ -140,7 +142,7 @@ class YouTubeShortsController:
         raise ValueError("YouTube Shorts yuklab olishda noma'lum xatolik")
 
     def _download_with_pytubefix(self, url: str) -> str:
-        yt = YouTube(url)
+        yt = YouTube(url, client='WEB')
 
         stream = (
             yt.streams.filter(progressive=True, file_extension="mp4")

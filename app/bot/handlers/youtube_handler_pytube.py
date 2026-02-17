@@ -18,19 +18,22 @@ def sanitize_filename(name: str) -> str:
 def download_audio_with_pytube(query: str) -> str | None:
     try:
         search = Search(query)
-        if not search.results:
+        videos = search.videos
+        if not videos:
             logger.warning(f"No results for query: {query}")
             return None
 
-        video = search.results[0]
-        stream = video.streams.filter(only_audio=True).order_by("abr").desc().first()
+        video_url = videos[0].watch_url
+        video_id = videos[0].video_id
+        yt = YouTube(video_url, client='WEB')
+        stream = yt.streams.filter(only_audio=True).order_by("abr").desc().first()
 
         if not stream:
             logger.warning(f"No audio stream found for query: {query}")
             return None
 
-        title = sanitize_filename(video.title)
-        file_name = f"{title[:50]}-{video.video_id}.mp4"
+        title = sanitize_filename(yt.title)
+        file_name = f"{title[:50]}-{video_id}.mp4"
         out_path = MUSIC_DIR / file_name
 
         if out_path.exists() and out_path.stat().st_size > 1024:

@@ -9,7 +9,6 @@ from typing import Optional
 import yt_dlp
 
 from app.bot.extensions.get_random_cookie import (
-    get_random_cookie_for_youtube,
     get_all_youtube_cookies,
 )
 from app.bot.handlers.youtube_handler_pytube import download_audio_with_pytube
@@ -48,24 +47,26 @@ AUDIO_OPTS_BASE = {
     "fragment_retries": 3,
     "logger": _YtDlpSilentLogger(),
     "prefer_free_formats": True,
+    "extractor_args": {"youtube": {"player_client": ["web", "mweb"]}},
+    "check_formats": None,
+    "geo_bypass": True,
 }
 
 VIDEO_OPTS = {
-    "format": (
-        "bestvideo[height<=720][filesize<45M]+bestaudio[ext=m4a]/best[height<=720][filesize<45M]/"
-        "bestvideo[height<=720]+bestaudio/best[height<=720]/best[filesize<45M]/best"
-    ),
+    "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
     "outtmpl": f"{MUSIC_DIR}/%(title).40s-%(id)s.%(ext)s",
     "quiet": True,
     "no_warnings": True,
     "noplaylist": True,
-    "ignoreerrors": True,
+    "ignoreerrors": False,
     "socket_timeout": 15,
     "retries": 3,
     "fragment_retries": 3,
-    "cookiefile": get_random_cookie_for_youtube(CookieType.YOUTUBE.value),
     "merge_output_format": "mp4",
     "logger": _YtDlpSilentLogger(),
+    "extractor_args": {"youtube": {"player_client": ["web", "mweb"]}},
+    "check_formats": None,
+    "geo_bypass": True,
 }
 
 
@@ -161,32 +162,46 @@ def _audio_sync(query: str) -> Optional[str]:
 
 def _video_sync(video_id: str, title: str) -> Optional[str]:
     cookies = get_all_youtube_cookies(CookieType.YOUTUBE.value)
+    cookie_candidates: list[str | None] = cookies if cookies else [None]
 
     safe_title = "".join(c for c in title if c.isalnum() or c in " -_")[:40]
 
-    for cookie_file in cookies:
-        opts = VIDEO_OPTS.copy()
-        opts["cookiefile"] = cookie_file
+    format_candidates = [
+        "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "bv*[height<=720]+ba/b[height<=720]/b",
+        "best",
+        "18",
+    ]
 
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                url = f"https://youtube.com/watch?v={video_id}"
-                ydl.download([url])
+    for cookie_file in cookie_candidates:
+        for format_selector in format_candidates:
+            opts = VIDEO_OPTS.copy()
+            opts["format"] = format_selector
+            if cookie_file:
+                opts["cookiefile"] = cookie_file
 
-                base_patterns = [
-                    f"{safe_title}-{video_id}",
-                    f"*{video_id}*",
-                    f"{safe_title}*",
-                ]
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    url = f"https://youtube.com/watch?v={video_id}"
+                    ydl.download([url])
 
-                for pattern in base_patterns:
-                    for ext in ("mp4", "webm", "mkv", "avi"):
-                        for file_path in MUSIC_DIR.glob(f"{pattern}.{ext}"):
-                            if file_path.exists() and file_path.stat().st_size > 1000:
-                                return str(file_path)
-        except Exception as e:
-            logger.warning(f"Video download failed with {cookie_file}: {e}")
-            continue
+                    base_patterns = [
+                        f"{safe_title}-{video_id}",
+                        f"*{video_id}*",
+                        f"{safe_title}*",
+                    ]
+
+                    for pattern in base_patterns:
+                        for ext in ("mp4", "webm", "mkv", "avi"):
+                            for file_path in MUSIC_DIR.glob(f"{pattern}.{ext}"):
+                                if file_path.exists() and file_path.stat().st_size > 1000:
+                                    return str(file_path)
+            except Exception as e:
+                error_text = str(e).lower()
+                if "requested format is not available" in error_text:
+                    continue
+                logger.warning(f"Video download failed (cookie={cookie_file}, format={format_selector}): {e}")
+                continue
 
     logger.error(f"All cookies failed for video: {video_id}")
     return None
@@ -203,6 +218,7 @@ def _video_sync_with_quality(video_id: str, title: str, quality: int) -> Optiona
         f"bv*[height<={quality}]+ba/b[height<={quality}]/b",
         f"best[height<={quality}]/best",
         "best",
+        "18",
     ]
 
     for cookie_file in cookie_candidates:
