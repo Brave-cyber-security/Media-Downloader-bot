@@ -1,0 +1,15 @@
+#  /etc/systemd/system/telegrambot.service
+[Unit]
+Description=Telegram Bot Service
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=~/TinglaBot
+ExecStart=/home/ubuntu/mybot/venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

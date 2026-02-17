@@ -1,0 +1,98 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: on-failure
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - USE_LOCAL_BOT_API=true
+      - LOCAL_BOT_API_URL=http://telegram-bot-api:8081
+      - SELENIUM_REMOTE_URL=http://selenium:4444/wd/hub
+    volumes:
+      - ./media:/media
+      - ./service:/service
+      - ./static/cookie:/app/static/cookie
+      - /dev/shm:/dev/shm
+    command: ["sh", "-c", "./entrypoint.sh"]
+    networks:
+      - bot_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      selenium:
+        condition: service_healthy
+      telegram-bot-api:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bot_network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  selenium:
+    image: selenium/standalone-chrome:latest
+    platform: linux/amd64
+    restart: always
+    ports:
+      - "4444:4444"
+      - "7900:7900"
+    shm_size: 1g
+    environment:
+      - SE_VNC_NO_PASSWORD=1
+      - SE_NODE_MAX_INSTANCES=2
+      - SE_NODE_MAX_SESSIONS=2
+      - SE_NODE_SESSION_TIMEOUT=150
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+    volumes:
+      - /dev/shm:/dev/shm
+    networks:
+      - bot_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4444/wd/hub/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    restart: on-failure
+    env_file:
+      - .env
+    command:
+      - --local
+      - --http-port=8081
+      - --api-id=${TELEGRAM_API_ID}
+      - --api-hash=${TELEGRAM_API_HASH}
+      - --dir=/var/lib/telegram-bot-api
+      - --temp-dir=/var/lib/telegram-bot-api/tmp
+      - --max-webhook-connections=100
+    volumes:
+      - telegram_bot_api_data:/var/lib/telegram-bot-api
+    networks:
+      - bot_network
+
+volumes:
+  postgres_data:
+  telegram_bot_api_data:
+
+networks:
+  bot_network:
+    driver: bridge
