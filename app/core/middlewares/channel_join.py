@@ -37,16 +37,7 @@ class CheckSubscriptionMiddleware(BaseMiddleware):
             if await is_free_for_month(user_id):
                 return await handler(event, data)
             text = event.text or ""
-            if (
-                text.startswith("/start")
-                or text.startswith("/lang")
-                or text.startswith("/help")
-                or text.startswith("/top")
-                or text.startswith("/new")
-                or text.startswith("/payment")
-                or text.startswith("/balance")
-                or text.startswith("/developer")
-            ):
+            if text.startswith("/"):
                 return await handler(event, data)
             unsubscribed = await fetch_unsubscribed_channels(user_id, bot)
             if unsubscribed:

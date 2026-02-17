@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     ADMINS: str = "123456"
     USE_LOCAL_BOT_API: bool = False
     LOCAL_BOT_API_URL: str = "http://telegram-bot-api:8081"
+    TELEGRAM_API_ID: str | None = None
+    TELEGRAM_API_HASH: str | None = None
 
     # POSTGRES CREDENTIALS
     POSTGRES_USER: str
@@ -24,7 +26,7 @@ class Settings(BaseSettings):
     LIKEE_API_KEY: str
     TWITTER_API_KEY: str
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
     def admins_list(self):
